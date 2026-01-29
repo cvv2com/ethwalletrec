@@ -1,5 +1,37 @@
 import re
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def process_file(file_path, mnemonic_pattern, address_pattern):
+    """
+    Process a single file and extract mnemonics and addresses.
+    Returns a tuple: (mnemonics_set, addresses_set)
+    """
+    mnemonics = set()
+    addresses = set()
+    
+    try:
+        # Read file with error handling for binary/non-UTF-8 files
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Extract and clean mnemonics
+        raw_mnemonics = mnemonic_pattern.findall(content)
+        for m in raw_mnemonics:
+            # Clean up line breaks and extra spaces
+            clean_m = ' '.join(m.split())
+            if clean_m:
+                mnemonics.add(clean_m)
+        
+        # Extract ETH addresses
+        addresses_found = address_pattern.findall(content)
+        addresses.update(addresses_found)
+        
+    except Exception as e:
+        # Skip files that can't be read
+        pass
+    
+    return (mnemonics, addresses)
 
 def extract_wallets_from_directory(directory_path='.'):
     mnemonics_file = "mnemonics.txt"
@@ -20,38 +52,42 @@ def extract_wallets_from_directory(directory_path='.'):
     
     files_scanned = 0
     
+    # Collect all file paths to process
+    files_to_process = []
+    for root, dirs, files in os.walk(directory_path):
+        for filename in files:
+            # Skip output files and the script itself
+            if filename in skip_files:
+                continue
+            file_path = os.path.join(root, filename)
+            files_to_process.append(file_path)
+    
+    total_files = len(files_to_process)
+    print(f"Found {total_files} files to scan. Starting processing...")
+    
     try:
-        # Walk through directory tree
-        for root, dirs, files in os.walk(directory_path):
-            for filename in files:
-                # Skip output files and the script itself
-                if filename in skip_files:
-                    continue
+        # Process files in parallel using ThreadPoolExecutor
+        max_workers = min(32, (os.cpu_count() or 1) * 4)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all file processing tasks
+            future_to_file = {
+                executor.submit(process_file, file_path, mnemonic_pattern, address_pattern): file_path
+                for file_path in files_to_process
+            }
+            
+            # Process completed tasks and aggregate results
+            for future in as_completed(future_to_file):
+                mnemonics, addresses = future.result()
                 
-                file_path = os.path.join(root, filename)
+                # Aggregate results
+                all_mnemonics.update(mnemonics)
+                all_addresses.update(addresses)
+                files_scanned += 1
                 
-                try:
-                    # Read file with error handling for binary/non-UTF-8 files
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                    
-                    files_scanned += 1
-                    
-                    # 1. Extract and clean mnemonics
-                    raw_mnemonics = mnemonic_pattern.findall(content)
-                    for m in raw_mnemonics:
-                        # Clean up line breaks and extra spaces
-                        clean_m = ' '.join(m.split())
-                        if clean_m:
-                            all_mnemonics.add(clean_m)
-                    
-                    # 2. Extract ETH addresses
-                    addresses = address_pattern.findall(content)
-                    all_addresses.update(addresses)
-                    
-                except Exception as e:
-                    # Skip files that can't be read
-                    continue
+                # Print progress every 100 files or at completion
+                if files_scanned % 100 == 0 or files_scanned == total_files:
+                    print(f"Progress: {files_scanned}/{total_files} files processed...")
         
         # Convert sets to sorted lists for consistent output
         clean_mnemonics = sorted(list(all_mnemonics))
