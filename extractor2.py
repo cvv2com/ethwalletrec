@@ -1,8 +1,6 @@
 import re
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
-import time
 
 def process_file(file_path, mnemonic_pattern, address_pattern):
     """
@@ -52,8 +50,6 @@ def extract_wallets_from_directory(directory_path='.'):
     mnemonic_pattern = re.compile(r'mnemonic\s*:\s*([^}\n]+)')
     address_pattern = re.compile(r'address\s*:\s*(0x[a-fA-F0-9]+)')
     
-    # Thread safety lock for aggregating results
-    results_lock = Lock()
     files_scanned = 0
     
     # Collect all file paths to process
@@ -84,15 +80,14 @@ def extract_wallets_from_directory(directory_path='.'):
             for future in as_completed(future_to_file):
                 mnemonics, addresses = future.result()
                 
-                # Thread-safe aggregation of results
-                with results_lock:
-                    all_mnemonics.update(mnemonics)
-                    all_addresses.update(addresses)
-                    files_scanned += 1
-                    
-                    # Print progress every 100 files or at completion
-                    if files_scanned % 100 == 0 or files_scanned == total_files:
-                        print(f"Progress: {files_scanned}/{total_files} files processed...")
+                # Aggregate results
+                all_mnemonics.update(mnemonics)
+                all_addresses.update(addresses)
+                files_scanned += 1
+                
+                # Print progress every 100 files or at completion
+                if files_scanned % 100 == 0 or files_scanned == total_files:
+                    print(f"Progress: {files_scanned}/{total_files} files processed...")
         
         # Convert sets to sorted lists for consistent output
         clean_mnemonics = sorted(list(all_mnemonics))
