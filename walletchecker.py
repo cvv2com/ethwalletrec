@@ -1,10 +1,16 @@
 from web3 import Web3
 import time
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 def check_balances(input_file, output_file):
-    # Ücretsiz halka açık bir RPC sunucusu (Yavaş olabilir)
-    # Daha hızlı sonuç için Infura veya Alchemy hesabı açıp kendi URL'nizi buraya yazın.
-    rpc_url = "https://eth.llamarpc.com" 
+    # RPC URL - Öncelikle .env dosyasından çekilir, yoksa public LlamaRPC kullanılır
+    # Daha hızlı sonuç için .env dosyasına kendi Infura veya Alchemy URL'nizi ekleyin:
+    # ETH_RPC_URL=https://mainnet.infura.io/v3/YOUR_PROJECT_ID
+    rpc_url = os.getenv("ETH_RPC_URL", "https://eth.llamarpc.com") 
     
     w3 = Web3(Web3.HTTPProvider(rpc_url))
 
